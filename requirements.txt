@@ -1,0 +1,12 @@
+pdfplumber
+pypdf
+langchain 
+langchain-community 
+langchain-groq 
+langgraph 
+langsmith 
+chromadb 
+sentence-transformers 
+loguru
+python-dotenv 
+tqdm
