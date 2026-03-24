@@ -1,4 +1,8 @@
 # Byte-compiled / optimized / DLL files
+
+data/chroma_db/
+data/*.json
+
 __pycache__/
 *.py[codz]
 *$py.class
