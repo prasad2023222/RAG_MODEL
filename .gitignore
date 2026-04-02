@@ -1,5 +1,8 @@
 # Byte-compiled / optimized / DLL files
-
+#ignore speficfiles
+sample.py
+test_files.py
+verify_downloads.py
 data/chroma_db/
 data/*.json
 
