@@ -1,53 +1,28 @@
+"""
+src/data_pipeline/detector.py
+ONE JOB: Detect what type of medical paper this is
+"""
 
-#ONE JOB: Detect what type of paper this is
-
-
-from ast import pattern
 import re
+
 
 def detect_paper_type(text: str) -> str:
     """
-    Reads first 3000 chars and decides:
+    Reads first 3000 chars and returns one of:
     clinical_trial / meta_analysis / guideline / review / general
     """
-    signals = {
-        "clinical_trial": [
-            r"randomized\s+controlled\s+trial",
-            r"\bRCT\b",
-            r"double.blind",
-            r"hazard\s+ratio",
-            r"primary\s+endpoint",
-        ],
-        "meta_analysis": [
-            r"meta.?analysis",
-            r"systematic\s+review",
-            r"forest\s+plot",
-            r"PRISMA",
-        ],
-        "guideline": [
-            r"guideline",
-            r"strong\s+recommendation",
-            r"grade\s+[A-D]\b",
-            r"level\s+of\s+evidence",
-        ],
-        "review": [
-            r"narrative\s+review",
-            r"literature\s+review",
-            r"state\s+of\s+the\s+art",
-        ],
-    }
+    sample = text[:3000]
 
-    sample=text[:3000]
+    if re.search(r'randomized\s+controlled\s+trial|double.blind|placebo.controlled', sample, re.IGNORECASE):
+        return "clinical_trial"
 
-    scores={}
+    if re.search(r'meta.?analysis|systematic\s+review|forest\s+plot', sample, re.IGNORECASE):
+        return "meta_analysis"
 
-    for paper_type,patterns in signals.items():
-        score=sum(
-            1 for p in patterns
-            if re.search(p,sample,re.IGNORECASE)
-        )
+    if re.search(r'guideline|strong\s+recommendation|level\s+of\s+evidence', sample, re.IGNORECASE):
+        return "guideline"
 
-        scores[paper_type]=score
+    if re.search(r'narrative\s+review|literature\s+review|comprehensive\s+review', sample, re.IGNORECASE):
+        return "review"
 
-        best=max(scores,key=scores.get)
-        return best if  scores[best]>0 else "general"
+    return "general"

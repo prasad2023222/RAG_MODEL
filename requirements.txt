@@ -10,3 +10,4 @@ sentence-transformers
 loguru
 python-dotenv 
 tqdm
+gradio

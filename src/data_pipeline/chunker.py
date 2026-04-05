@@ -7,67 +7,55 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from src.data_pipeline.section_finder import SECTION_WEIGHT
 
+CHUNK_SIZE    = 800
+CHUNK_OVERLAP = 200
+MIN_CHUNK_LEN = 50
 
-def chunk_paper(
-    full_text: str,
-    sections:  dict,
-    tables:    list,
-    base_meta: dict
-) -> list:
+
+def create_chunks(clean_text: str, sections: dict,
+                  tables: list, base_meta: dict) -> list:
     """
-    Splits paper into chunks.
-
-    PATH A — sections found:
-        Chunks each section separately.
-        Tags each chunk with section name + weight.
-
-    PATH B — no sections found:
-        Chunks the full text.
-        Used as fallback for unstructured papers.
-
-    ALWAYS adds table chunks at the end.
+    PATH A: sections found    → chunk section by section
+    PATH B: no sections found → chunk full clean text
+    ALWAYS: add table chunks
     """
-
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size    = 700,
-        chunk_overlap = 150,
-        separators    = ["\n\n", "\n", ". ", " "],
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=["\n\n", "\n", ". ", " "],
     )
-
     docs = []
 
-    # ── PATH A: section-based chunks ─────────────────────────
+    # ── PATH A: Section-based chunks ─────────────────────────
     if sections:
-        for sec_name, sec_text in sections.items():
-            if len(sec_text.strip()) < 100:
+        for section_name, section_text in sections.items():
+            if len(section_text.strip()) < MIN_CHUNK_LEN:
                 continue
 
-            weight = SECTION_WEIGHT.get(sec_name, "LOW")
-            chunks = splitter.split_text(sec_text)
+            weight = SECTION_WEIGHT.get(section_name, "LOW")
 
-            for i, chunk in enumerate(chunks):
-                if len(chunk.strip()) < 80:
+            for i, chunk in enumerate(splitter.split_text(section_text)):
+                if len(chunk.strip()) < MIN_CHUNK_LEN:
                     continue
                 docs.append(Document(
-                    page_content = chunk,
-                    metadata     = {
+                    page_content=chunk,
+                    metadata={
                         **base_meta,
-                        "section":        sec_name,
+                        "section":        section_name,
                         "section_weight": weight,
                         "chunk_type":     "section",
                         "chunk_index":    i,
                     }
                 ))
 
-    # ── PATH B: full-text fallback ────────────────────────────
-    else:
-        chunks = splitter.split_text(full_text)
-        for i, chunk in enumerate(chunks):
-            if len(chunk.strip()) < 80:
+    # ── PATH B: Full text fallback ────────────────────────────
+    if not docs:
+        for i, chunk in enumerate(splitter.split_text(clean_text)):
+            if len(chunk.strip()) < MIN_CHUNK_LEN:
                 continue
             docs.append(Document(
-                page_content = chunk,
-                metadata     = {
+                page_content=chunk,
+                metadata={
                     **base_meta,
                     "section":        "full_text",
                     "section_weight": "MEDIUM",
@@ -76,13 +64,13 @@ def chunk_paper(
                 }
             ))
 
-    # ── ALWAYS: table chunks ──────────────────────────────────
+    # ── ALWAYS: Table chunks ──────────────────────────────────
     for table in tables:
         table_text = table.get("text", "")
-        if len(table_text) > 60:
+        if len(table_text) > MIN_CHUNK_LEN:
             docs.append(Document(
-                page_content = f"[TABLE page {table['page']}]\n{table_text}",
-                metadata     = {
+                page_content=f"[TABLE page {table['page']}]\n{table_text}",
+                metadata={
                     **base_meta,
                     "section":        "table",
                     "section_weight": "HIGH",

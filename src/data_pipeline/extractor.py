@@ -1,6 +1,9 @@
 """
 src/data_pipeline/extractor.py
-ONE JOB: Read a PDF file and return its text + tables + metadata
+ONE JOB: Read a PDF and return raw text + tables + metadata
+
+Returns dict with key "raw_text" (not cleaned yet)
+Cleaning happens separately in pdf_loader
 """
 
 import re
@@ -9,50 +12,45 @@ from collections import Counter
 from loguru import logger
 
 
-def extract_pdf(pdf_path: str) -> dict:
+def extract_text_and_tables(pdf_path: str) -> dict:
     """
-    Opens a PDF and extracts:
-    - full text (all pages combined)
-    - tables (as text rows)
-    - metadata (title, author, year, DOI, sample size)
-
-    Returns a clean dict ready for section detection + chunking.
+    Opens PDF and returns:
+      raw_text  → all page text combined (NOT cleaned)
+      tables    → list of tables as text
+      metadata  → title, author, year, doi etc
+      pages     → page count
     """
     import pdfplumber
     from pypdf import PdfReader
-    from src.data_pipeline.medical_cleaner import MedicalCleaner
-
-    cleaner = MedicalCleaner()
 
     result = {
-        "file_name": Path(pdf_path).name,
-        "full_text": "",
-        "tables":    [],
-        "metadata":  {},
-        "pages":     0,
+        "raw_text": "",
+        "tables":   [],
+        "metadata": {},
+        "pages":    0,
     }
 
-    # ── Step 1: Read PDF metadata (title, author) ─────────────
+    # ── Get PDF metadata (title, author) ─────────────────────
     try:
-        reader       = PdfReader(pdf_path)
-        raw          = reader.metadata or {}
-        result["pages"]    = len(reader.pages)
+        reader = PdfReader(pdf_path)
+        raw    = reader.metadata or {}
+        result["pages"] = len(reader.pages)
         result["metadata"] = {
             "title":  str(raw.get("/Title",  "")).strip(),
             "author": str(raw.get("/Author", "")).strip(),
         }
-    except Exception as e:
-        logger.warning(f"  Metadata read failed: {e}")
+    except Exception:
+        pass
 
-    # ── Step 2: Extract text + tables from each page ──────────
-    raw_text = ""
+    # ── Extract text and tables page by page ─────────────────
+    all_text = ""
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
 
                 # Page text
-                page_text  = page.extract_text() or ""
-                raw_text  += f"\n[Page {page_num}]\n{page_text}"
+                page_text = page.extract_text() or ""
+                all_text += f"\n[Page {page_num}]\n{page_text}"
 
                 # Tables on this page
                 for table in page.extract_tables():
@@ -72,41 +70,39 @@ def extract_pdf(pdf_path: str) -> dict:
                             })
 
     except Exception as e:
-        logger.error(f"  PDF read failed: {e}")
+        logger.error(f"PDF read error in {Path(pdf_path).name}: {e}")
         return result
 
-    # ── Step 3: Clean the text ────────────────────────────────
-    result["full_text"] = cleaner.clean(raw_text)
+    # Store raw text
+    result["raw_text"] = all_text
 
-    # ── Step 4: Extract inline metadata from text ─────────────
-    result["metadata"].update(
-        _extract_inline_metadata(result["full_text"])
-    )
+    # Extract metadata from text body
+    result["metadata"].update(_extract_body_metadata(all_text))
 
     logger.info(
         f"  Extracted: {result['pages']} pages | "
         f"{len(result['tables'])} tables | "
-        f"{len(result['full_text'])} chars"
+        f"{len(result['raw_text'])} chars"
     )
-
     return result
 
 
-def _extract_inline_metadata(text: str) -> dict:
-    """
-    Pulls useful metadata from paper body text:
-    sample size, year, DOI, study type
-    """
+def _extract_body_metadata(text: str) -> dict:
+    """Pull year, sample size, DOI, study type from text body."""
     meta = {}
 
-    # Sample size: n=48,276 or 9361 patients
-    for pattern in [r'n\s*=\s*([\d,]+)', r'([\d,]+)\s+patients']:
+    # Sample size
+    for pattern in [
+        r'n\s*=\s*([\d,]+)',
+        r'([\d,]+)\s+patients',
+        r'([\d,]+)\s+participants',
+    ]:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
             meta["sample_size"] = m.group(1).replace(",", "")
             break
 
-    # Year: most common 4-digit year in text
+    # Most common year
     years = re.findall(r'\b(20[0-2]\d|199\d)\b', text)
     if years:
         meta["year"] = Counter(years).most_common(1)[0][0]
